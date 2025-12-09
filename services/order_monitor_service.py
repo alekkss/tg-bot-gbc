@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class OrderMonitorService:
     """Сервис для мониторинга заказов в фоновом режиме"""
     
-    TARGET_STATUS_CODE = "otpravit-v-magazin-ne-trogat"
+    # TARGET_STATUS_CODE = "otpravit-v-magazin-ne-trogat"
     CHECK_INTERVAL = 60  # 1 минута
     CACHE_REFRESH_TIME = dt_time(0, 0)  # 00:00
     
@@ -33,6 +33,10 @@ class OrderMonitorService:
         self.is_running = False
         self.task = None
         self.last_cache_refresh_date = None
+
+        # ✅ Загружаем статусы из Settings
+        self.TARGET_STATUS_CODE = Settings.get_status_target()
+        self.STATUS_RETURNED = Settings.get_status_returned_from_discussion()
         
         # Инициализируем БД
         self.db = DatabaseService()
@@ -487,8 +491,8 @@ class OrderMonitorService:
                 current_status = current_order.get('status')
                 
                 # ВЕРНУЛСЯ В OTPRAVLEN-V-SBORKU?
-                if current_status == 'otpravlen-v-sborku':
-                    logger.info(f"🔄 Заказ {order_id} вернулся из no-product → otpravlen-v-sborku")
+                if current_status == self.STATUS_RETURNED:
+                    logger.info(f"🔄 Заказ {order_id} вернулся из no-product → {self.STATUS_RETURNED}")
                     
                     # Отмечаем что возвращался
                     self.db.mark_order_returned_from_no_product(order_id)
@@ -499,7 +503,7 @@ class OrderMonitorService:
                     # Логируем
                     self.db.log_error(
                         'order_returned_from_no_product',
-                        f'Заказ вернулся из no-product в otpravlen-v-sborku',
+                        f'Заказ вернулся из no-product в {self.STATUS_RETURNED}',
                         order_id
                     )
                     

@@ -207,14 +207,17 @@ async def handle_confirm_order(callback: CallbackQuery):
         delivery_type = db.get_order_delivery_type(order_id)
         
         # Обновляем статус на "Передан в комплектацию"
-        success = retailcrm_service.update_order_status(order_id, "send-to-assembling")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_confirmed()
+        )
         
         if success:
             db.log_order_action(
                 order_id=order_id,
                 admin_id=user_id,
                 action='confirmed',
-                comment=f'Статус изменен: {old_status} → send-to-assembling'
+                comment=f'Статус изменен: {old_status} → {Settings.get_status_confirmed()}'
             )
             
             # Выбираем следующую кнопку в зависимости от типа доставки
@@ -304,7 +307,10 @@ async def handle_bouquet_ready(callback: CallbackQuery):
         order_number = order.get('number', order_id)
         
         # Обновляем статус на "Букет готов"
-        success = retailcrm_service.update_order_status(order_id, "buket-gotov")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_bouquet_ready()
+        )
         
         if success:
             db = DatabaseService()
@@ -312,7 +318,7 @@ async def handle_bouquet_ready(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='bouquet_ready',
-                comment=f'Букет готов. Статус: {old_status} → buket-gotov'
+                comment=f'Букет готов. Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
             )
             
             # Следующая кнопка - "Передан в доставку"
@@ -379,7 +385,10 @@ async def handle_sent_to_delivery(callback: CallbackQuery):
         order_number = order.get('number', order_id)
         
         # Обновляем статус на "Передан в доставку"
-        success = retailcrm_service.update_order_status(order_id, "send-to-delivery")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_sent_to_delivery()
+        )
         
         if success:
             db = DatabaseService()
@@ -387,7 +396,7 @@ async def handle_sent_to_delivery(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='sent_to_delivery',
-                comment=f'Передан в доставку. Статус: {old_status} → send-to-delivery'
+                comment=f'Передан в доставку. Статус: {old_status} → {Settings.get_status_sent_to_delivery()}'
             )
             
             # Следующая кнопка - "Выполнен"
@@ -462,7 +471,10 @@ async def handle_completed(callback: CallbackQuery):
         order_number = order.get('number', order_id)
         
         # Обновляем статус на "Выполнен"
-        success = retailcrm_service.update_order_status(order_id, "complete")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_completed()
+        )
         
         if success:
             db = DatabaseService()
@@ -470,7 +482,7 @@ async def handle_completed(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='completed',
-                comment=f'Заказ выполнен. Статус: {old_status} → complete'
+                comment=f'Заказ выполнен. Статус: {old_status} → {Settings.get_status_completed()}'
             )
             
             # Убираем кнопки
@@ -535,7 +547,10 @@ async def handle_picked_up(callback: CallbackQuery):
         order_number = order.get('number', order_id)
         
         # Для самовывоза сразу "Выполнен"
-        success = retailcrm_service.update_order_status(order_id, "send-to-delivery")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_sent_to_delivery()
+        )
         
         if success:
             db = DatabaseService()
@@ -543,7 +558,7 @@ async def handle_picked_up(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='completed',
-                comment=f'Товар забран (самовывоз). Статус: {old_status} → send-to-delivery'
+                comment=f'Товар забран (самовывоз). Статус: {old_status} → {Settings.get_status_sent_to_delivery()}'
             )
             
             await safe_edit_markup(callback, None)
@@ -613,7 +628,10 @@ async def handle_reject_order(callback: CallbackQuery):
         order_number = order.get('number', order_id)
         
         # Обновляем статус на "Отменен"
-        success = retailcrm_service.update_order_status(order_id, "cancel-other")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_rejected()
+        )
         
         if success:
             db = DatabaseService()
@@ -621,7 +639,7 @@ async def handle_reject_order(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='rejected',
-                comment=f'Статус изменен: {old_status} → cancel-other'
+                comment=f'Статус изменен: {old_status} → {Settings.get_status_rejected()}'
             )
             
             # Убираем клавиатуру
@@ -686,7 +704,10 @@ async def handle_discuss_replacement(callback: CallbackQuery):
         order_number = order.get('number', order_id)
         
         # Обновляем статус на "Товара нет"
-        success = retailcrm_service.update_order_status(order_id, "obsuzhdenie-zameny")
+        success = retailcrm_service.update_order_status(
+            order_id, 
+            Settings.get_status_discussion()
+        )
         
         if success:
             db = DatabaseService()
@@ -699,7 +720,7 @@ async def handle_discuss_replacement(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='discuss_replacement',
-                comment=f'Нет товара в наличии. Статус: {old_status} → obsuzhdenie-zameny'
+                comment=f'Нет товара в наличии. Статус: {old_status} → {Settings.get_status_discussion()}'
             )
             
             await safe_edit_markup(callback, None)

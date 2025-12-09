@@ -182,3 +182,45 @@ class Settings:
     def get_rate_limit_window() -> int:
         """Окно времени для rate limiting (секунды)"""
         return int(os.getenv('RATE_LIMIT_WINDOW', '60'))
+    
+    # ============ RETAILCRM СТАТУСЫ ============
+    
+    @staticmethod
+    def get_status_target() -> str:
+        """Целевой статус для мониторинга новых заказов"""
+        return os.getenv('STATUS_TARGET', 'otpravit-v-magazin-ne-trogat')
+    
+    @staticmethod
+    def get_status_returned_from_discussion() -> str:
+        """Статус возврата из обсуждения замен"""
+        return os.getenv('STATUS_RETURNED_FROM_DISCUSSION', 'otpravlen-v-sborku')
+    
+    @staticmethod
+    def get_status_confirmed() -> str:
+        """Статус после подтверждения заказа"""
+        return os.getenv('STATUS_CONFIRMED', 'send-to-assembling')
+    
+    @staticmethod
+    def get_status_bouquet_ready() -> str:
+        """Статус когда букет готов"""
+        return os.getenv('STATUS_BOUQUET_READY', 'buket-gotov')
+    
+    @staticmethod
+    def get_status_sent_to_delivery() -> str:
+        """Статус передачи в доставку"""
+        return os.getenv('STATUS_SENT_TO_DELIVERY', 'send-to-delivery')
+    
+    @staticmethod
+    def get_status_completed() -> str:
+        """Статус выполненного заказа"""
+        return os.getenv('STATUS_COMPLETED', 'complete')
+    
+    @staticmethod
+    def get_status_rejected() -> str:
+        """Статус отменённого заказа"""
+        return os.getenv('STATUS_REJECTED', 'cancel-other')
+    
+    @staticmethod
+    def get_status_discussion() -> str:
+        """Статус обсуждения замен (нет товара)"""
+        return os.getenv('STATUS_DISCUSSION', 'obsuzhdenie-zameny')
