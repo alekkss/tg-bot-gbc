@@ -226,7 +226,7 @@ async def handle_confirm_order(callback: CallbackQuery):
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(
-                            text="📦 Заказ забрали",
+                            text="🌸 Букет готов",
                             callback_data=f"picked_up:{order_id}"
                         )]
                     ]
@@ -549,7 +549,7 @@ async def handle_picked_up(callback: CallbackQuery):
         # Для самовывоза сразу "Выполнен"
         success = retailcrm_service.update_order_status(
             order_id, 
-            Settings.get_status_sent_to_delivery()
+            Settings.get_status_bouquet_ready()
         )
         
         if success:
@@ -558,7 +558,7 @@ async def handle_picked_up(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='completed',
-                comment=f'Товар забран (самовывоз). Статус: {old_status} → {Settings.get_status_sent_to_delivery()}'
+                comment=f'Товар забран (самовывоз). Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
             )
             
             await safe_edit_markup(callback, None)
