@@ -157,7 +157,7 @@ class OrderMonitorService:
             
             # Дата доставки
             delivery_date = delivery.get('date', 'N/A')
-            lines.append(f"📅 <b>Дата заказа:</b> {delivery_date}")
+            lines.append(f"📅 <b>Дата доставки:</b> {delivery_date}")
             
             # Время доставки
             if 'time' in delivery:
