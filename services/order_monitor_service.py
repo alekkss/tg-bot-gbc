@@ -189,7 +189,7 @@ class OrderMonitorService:
                     time_str = self._adjust_custom_time(time_info, hours=-1)
                 
                 if time_str:
-                    lines.append(f"⏰ <b>Время заказа:</b> {time_str}")
+                    lines.append(f"⏰ <b>Время доставки:</b> {time_str}")
             
             lines.append("")
             
