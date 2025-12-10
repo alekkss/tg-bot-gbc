@@ -91,17 +91,24 @@ class OrderMonitorService:
         
         # Товары
         if 'items' in order and order['items']:
-            lines.append("<b>ТОВАРЫ:</b>")
-            for idx, item in enumerate(order['items'], 1):
+            lines.append("ТОВАРЫ:")
+            item_counter = 1  # Счётчик для нумерации
+            
+            for item in order['items']:
                 offer = item.get('offer', {})
                 item_name = offer.get('displayName', offer.get('name', 'N/A'))
                 quantity = item.get('quantity', 0)
-                lines.append(f"{idx}. {item_name} (x{quantity})")
-                
-                # Состав (если есть)
                 properties = offer.get('properties', {})
-                if properties.get('sostav'):
-                    lines.append(f"   {properties['sostav']}")
+                
+                # Дублируем товар quantity раз
+                for _ in range(quantity):
+                    lines.append(f"{item_counter}. {item_name}")
+                    
+                    # Состав (если есть)
+                    if properties.get('sostav'):
+                        lines.append(f"   {properties['sostav']}")
+                    
+                    item_counter += 1
             
             lines.append("")
         
