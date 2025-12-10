@@ -91,7 +91,7 @@ class OrderMonitorService:
         
         # Товары
         if 'items' in order and order['items']:
-            lines.append("ТОВАРЫ:")
+            lines.append("<b>ТОВАРЫ:</b>")
             lines.append("")
             item_counter = 1  # Счётчик для нумерации
             
@@ -103,7 +103,7 @@ class OrderMonitorService:
                 
                 # Дублируем товар quantity раз
                 for _ in range(quantity):
-                    lines.append(f"{item_counter}. {item_name}")
+                    lines.append(f"<b>{item_counter}. {item_name}</b>")
                     lines.append("")
                     
                     # Состав (если есть)
