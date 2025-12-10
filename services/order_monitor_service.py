@@ -109,7 +109,7 @@ class OrderMonitorService:
                     # Состав (если есть)
                     if properties.get('sostav'):
                         lines.append("Состав:")
-                        lines.append(f"   {properties['sostav']}")
+                        lines.append(f"<i>{properties['sostav']}</i>")
                         lines.append("")
                     
                     item_counter += 1
