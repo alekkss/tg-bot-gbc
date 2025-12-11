@@ -157,7 +157,7 @@ class OrderMonitorService:
             
             # Дата доставки
             delivery_date = delivery.get('date', 'N/A')
-            lines.append(f"📅 <b>Дата доставки:</b> {delivery_date}")
+            lines.append(f"📅 <b>ДАТА:</b> {delivery_date}")
             
             # Время доставки
             if 'time' in delivery:
@@ -189,7 +189,7 @@ class OrderMonitorService:
                     time_str = self._adjust_custom_time(time_info, hours=-1)
                 
                 if time_str:
-                    lines.append(f"⏰ <b>Время доставки:</b> {time_str}")
+                    lines.append(f"⏰ <b>ВРЕМЯ:</b> {time_str}")
             
             lines.append("")
             
