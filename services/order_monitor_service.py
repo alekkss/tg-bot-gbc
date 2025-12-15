@@ -574,9 +574,9 @@ class OrderMonitorService:
                 # Статус изменился на "buket-gotov"?
                 if current_status == Settings.get_status_bouquet_ready():
                     logger.info(f"🌸 Заказ {order_id} готов! Отправляем уведомление с кнопкой 'Передан курьеру'")
-
+                    
                     order_number = current_order.get('number', order_id)
-
+                    
                     # Создаём кнопку "Передан курьеру"
                     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                     keyboard = InlineKeyboardMarkup(
@@ -587,20 +587,25 @@ class OrderMonitorService:
                             )]
                         ]
                     )
-
-                    # Формируем сообщение
+                    
+                    # ✅ НОВОЕ: Формируем ПОЛНУЮ карточку заказа
+                    full_order_info = self.format_order_notification(current_order)
                     message = (
                         f"🌸 <b>БУКЕТ ГОТОВ</b>\n\n"
-                        f"<b>ЗАКАЗ #{order_number}</b>\n\n"
+                        f"{full_order_info}\n"
+                        f"━━━━━━━━━━━━━━━━━━━\n"
                         f"Букет скомплектован и готов к передаче курьеру"
                     )
-
+                    
+                    # ✅ НОВОЕ: Получаем изображения товаров
+                    image_urls = self.retailcrm_service.get_product_images_from_order(current_order)
+                    
                     # Отправляем уведомление администраторам склада
                     await self.send_notification_to_warehouse_admins(
                         current_order,
                         message,
                         keyboard,
-                        image_urls=None
+                        image_urls=image_urls
                     )
 
                     # Отмечаем что уведомление отправлено
