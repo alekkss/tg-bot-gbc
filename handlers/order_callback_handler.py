@@ -586,67 +586,67 @@ async def handle_order_picked_up_by_courier(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("picked_up:"))
 async def handle_picked_up(callback: CallbackQuery):
     """Обработчик 'Букет готов' (только для самовывоза)"""
-
+    
     # ⭐ ПРОВЕРКА RATE LIMIT
     if await check_rate_limit_for_user(callback, action='picked_up', limit=10, window=60):
         return
-
+    
     # 🔒 Безопасный парсинг callback_data
     order_id = parse_callback_data(callback.data, "picked_up")
     if order_id is None:
         await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
         return
-
+    
     try:
         user_id = callback.from_user.id
         username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
-
+        
         logger.info(f"Букет готов для заказа {order_id}, пользователь {username}")
-
+        
         await callback.answer("⏳ Обновляю статус...")
-
+        
         retailcrm_service = RetailCRMService(
             api_key=Settings.get_retailcrm_api_key(),
             domain=Settings.get_retailcrm_domain()
         )
-
+        
         order = retailcrm_service.get_order_by_id(order_id)
         if not order:
             await safe_send_message(callback, "❌ Заказ не найден в системе")
             return
-
+        
         old_status = order.get('status')
         order_number = order.get('number', order_id)
-
-        # Для самовывоза ставим статус "Букет готов"
+        
+        # ✅ НОВОЕ: Для самовывоза ставим сразу "Выполнен"
         success = retailcrm_service.update_order_status(
             order_id,
-            Settings.get_status_bouquet_ready()
+            Settings.get_status_completed()  # ✅ complete вместо buket-gotov
         )
-
+        
         if success:
             db = DatabaseService()
             db.log_order_action(
                 order_id=order_id,
                 admin_id=user_id,
-                action='bouquet_ready',
-                comment=f'Букет готов (самовывоз). Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
+                action='completed',  # ✅ completed вместо bouquet_ready
+                comment=f'Заказ выполнен (самовывоз). Статус: {old_status} → {Settings.get_status_completed()}'
             )
-
+            
             await safe_edit_markup(callback, None)
-            await callback.answer("✅ Букет готов! Ожидаем клиента", show_alert=True)
-
+            await callback.answer("✅ Заказ выполнен!", show_alert=True)  # ✅ Изменён текст
+            
             await safe_send_message(
                 callback,
-                f"✅ <b>ЗАКАЗ #{order_number} ГОТОВ К ВЫДАЧЕ</b>\n\n"
+                f"✅ <b>ЗАКАЗ #{order_number} ВЫПОЛНЕН</b>\n\n"  # ✅ Изменён текст
                 f"🧾 Отправьте фото чека",
                 parse_mode="HTML"
             )
-
-            logger.info(f"✅ Заказ {order_id} готов (самовывоз)")
+            
+            logger.info(f"✅ Заказ {order_id} выполнен (самовывоз)")
         else:
             await safe_send_message(callback, "❌ Не удалось обновить статус")
-
+    
     except Exception as e:
         logger.error(f"Ошибка при обработке 'Букет готов' для заказа {order_id}: {e}", exc_info=True)
         await safe_send_message(callback, "❌ Произошла ошибка")
