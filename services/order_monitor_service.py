@@ -408,14 +408,17 @@ class OrderMonitorService:
     async def check_orders_with_status(self) -> None:
         """Проверяет наличие заказов с целевым статусом и возвращённых из no-product"""
         start_time = time.time()
-        
+
         try:
-            # Получаем НОВЫЕ заказы со статусом 'otpravlen-v-sborku'
+            # Получаем НОВЫЕ заказы со статусом 'otpravit-v-magazin-ne-trogat'
             orders = self.retailcrm_service.get_orders_by_status(self.TARGET_STATUS_CODE)
-            
+
             # Проверяем заказы которые вернулись из no-product
             returned_from_no_product = await self._check_orders_returned_from_no_product()
-            
+
+            # ✅ НОВОЕ: Проверяем заказы со статусом "buket-gotov"
+            await self._check_orders_bouquet_ready()
+
             api_response_time = time.time() - start_time
             
             # Объединяем обе группы
@@ -531,6 +534,82 @@ class OrderMonitorService:
         except Exception as e:
             logger.error(f"❌ Ошибка при проверке возврата из no-product: {e}", exc_info=True)
             return []
+    
+    async def _check_orders_bouquet_ready(self) -> None:
+        """
+        Проверяет заказы которые изменили статус на 'buket-gotov'
+        и отправляет уведомление с кнопкой 'Передан курьеру' (только для доставки)
+        """
+        try:
+            # Получаем все обработанные заказы
+            processed_orders = self.db.get_all_processed_orders()
+
+            if not processed_orders:
+                return
+
+            for processed_order in processed_orders:
+                order_id = processed_order['order_id']
+                delivery_type = processed_order.get('delivery_type')
+
+                # Проверяем только заказы с доставкой (НЕ самовывоз)
+                if delivery_type == 'self-delivery':
+                    continue
+
+                # Проверяем что уведомление о "букет готов" ещё не отправлялось
+                if processed_order.get('bouquet_ready_notified'):
+                    continue
+
+                # Получаем текущий статус заказа
+                try:
+                    current_order = self.retailcrm_service.get_order_by_id(order_id)
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось получить заказ {order_id}: {e}")
+                    continue
+
+                if not current_order:
+                    continue
+
+                current_status = current_order.get('status')
+
+                # Статус изменился на "buket-gotov"?
+                if current_status == Settings.get_status_bouquet_ready():
+                    logger.info(f"🌸 Заказ {order_id} готов! Отправляем уведомление с кнопкой 'Передан курьеру'")
+
+                    order_number = current_order.get('number', order_id)
+
+                    # Создаём кнопку "Передан курьеру"
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(
+                                text="🚚 Передан курьеру",
+                                callback_data=f"order_picked_up_by_courier:{order_id}"
+                            )]
+                        ]
+                    )
+
+                    # Формируем сообщение
+                    message = (
+                        f"🌸 <b>БУКЕТ ГОТОВ</b>\n\n"
+                        f"<b>ЗАКАЗ #{order_number}</b>\n\n"
+                        f"Букет скомплектован и готов к передаче курьеру"
+                    )
+
+                    # Отправляем уведомление администраторам склада
+                    await self.send_notification_to_warehouse_admins(
+                        current_order,
+                        message,
+                        keyboard,
+                        image_urls=None
+                    )
+
+                    # Отмечаем что уведомление отправлено
+                    self.db.mark_bouquet_ready_notified(order_id)
+
+                    logger.info(f"✅ Уведомление о готовности букета отправлено для заказа {order_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке статуса 'букет готов': {e}", exc_info=True)
     
     async def monitor_loop(self) -> None:
         """Основной цикл мониторинга с защитой от критических ошибок"""

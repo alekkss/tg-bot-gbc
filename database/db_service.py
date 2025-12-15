@@ -108,6 +108,7 @@ class DatabaseService:
                     delivery_type TEXT,
                     was_in_no_product BOOLEAN DEFAULT 0,
                     returned_from_no_product BOOLEAN DEFAULT 0,
+                    bouquet_ready_notified BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -610,14 +611,15 @@ class DatabaseService:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT order_id, order_number, status, delivery_type, warehouse_code, 
-                        was_in_no_product, returned_from_no_product, created_at
+                    SELECT order_id, order_number, status, delivery_type, warehouse_code,
+                           was_in_no_product, returned_from_no_product, 
+                           bouquet_ready_notified, created_at
                     FROM processed_orders
                     ORDER BY created_at DESC
                 """)
-                
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
+
         except Exception as e:
             logger.error(f"❌ Ошибка при получении обработанных заказов: {e}")
             return []
@@ -725,4 +727,62 @@ class DatabaseService:
                     return False
         except Exception as e:
             logger.error(f"❌ Ошибка при удалении заказа для переоправки: {e}")
+            return False
+    
+    def mark_bouquet_ready_notified(self, order_id: int) -> bool:
+        """
+        Отмечает что уведомление о готовности букета было отправлено
+
+        Args:
+            order_id: ID заказа
+
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE processed_orders 
+                    SET bouquet_ready_notified = 1, 
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE order_id = ?
+                """, (order_id,))
+
+                conn.commit()
+
+                if cursor.rowcount > 0:
+                    logger.info(f"✅ Заказ {order_id} отмечен как 'уведомление о готовности отправлено'")
+                    return True
+                else:
+                    logger.warning(f"⚠️ Заказ {order_id} не найден в БД")
+                    return False
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка при отметке bouquet_ready_notified для заказа {order_id}: {e}")
+            return False
+
+    def is_bouquet_ready_notified(self, order_id: int) -> bool:
+        """
+        Проверяет было ли отправлено уведомление о готовности букета
+
+        Args:
+            order_id: ID заказа
+
+        Returns:
+            True если уведомление было отправлено, False если нет
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT bouquet_ready_notified FROM processed_orders WHERE order_id = ?",
+                    (order_id,)
+                )
+
+                result = cursor.fetchone()
+                return result['bouquet_ready_notified'] == 1 if result else False
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке bouquet_ready_notified для заказа {order_id}: {e}")
             return False

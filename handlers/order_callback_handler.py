@@ -222,7 +222,7 @@ async def handle_confirm_order(callback: CallbackQuery):
             
             # Выбираем следующую кнопку в зависимости от типа доставки
             if delivery_type == 'self-delivery':
-                # Для самовывоза - кнопка "Товар забрали"
+                # Для самовывоза - кнопка "Букет готов"
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(
@@ -231,30 +231,37 @@ async def handle_confirm_order(callback: CallbackQuery):
                         )]
                     ]
                 )
-            else:
-                # Для доставки - кнопка "Букет готов"
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(
-                            text="🌸 Букет готов",
-                            callback_data=f"bouquet_ready:{order_id}"
-                        )]
-                    ]
+                await safe_edit_markup(callback, keyboard)
+
+                await callback.answer(
+                    "✅ Заказ подтвержден! Статус: 'Передан в комплектацию'",
+                    show_alert=True
                 )
-            
-            await safe_edit_markup(callback, keyboard)
-            await callback.answer(
-                "✅ Заказ подтвержден! Статус: 'Передан в комплектацию'",
-                show_alert=True
-            )
-            
-            # Инструкция про фото букета
-            await safe_send_message(
-                callback,
-                f"✅ <b>ЗАКАЗ</b> #{order_number} <b>ПОДТВЕРЖДЕН</b>\n\n"
-                f"Отправьте: <b>Фото</b> готового букета 📸\n",
-                parse_mode="HTML"
-            )
+
+                # Инструкция про фото букета
+                await safe_send_message(
+                    callback,
+                    f"✅ <b>ЗАКАЗ #{order_number} ПОДТВЕРЖДЕН</b>\n\n"
+                    f"📸 Отправьте фото готового букета",
+                    parse_mode="HTML"
+                )
+            else:
+                # ✅ ДЛЯ ДОСТАВКИ: Убираем кнопки полностью
+                await safe_edit_markup(callback, None)
+
+                await callback.answer(
+                    "✅ Заказ подтвержден! Статус: 'Передан в комплектацию'",
+                    show_alert=True
+                )
+
+                # Инструкция про фото букета
+                await safe_send_message(
+                    callback,
+                    f"✅ <b>ЗАКАЗ #{order_number} ПОДТВЕРЖДЕН</b>\n\n"
+                    f"📸 Отправьте фото готового букета\n\n"
+                    f"⏳ После этого измените статус в RetailCRM на '<b>Букет готов</b>'",
+                    parse_mode="HTML"
+                )
             
             logger.info(f"✅ Заказ {order_id} подтвержден (тип: {delivery_type})")
         else:
@@ -265,402 +272,450 @@ async def handle_confirm_order(callback: CallbackQuery):
         logger.error(f"Ошибка при подтверждении заказа {order_id}: {e}", exc_info=True)
         await safe_send_message(callback, "❌ Произошла ошибка при обработке заказа")
 
+@router.callback_query(F.data.startswith("order_picked_up_by_courier:"))
+async def handle_order_picked_up_by_courier(callback: CallbackQuery):
+    """Обработчик кнопки 'Передан курьеру' (только для доставки)"""
 
-
-@router.callback_query(F.data.startswith("bouquet_ready:"))
-async def handle_bouquet_ready(callback: CallbackQuery):
-    """Обработчик кнопки 'Букет готов' (только для доставки)"""
-    
-    # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
-    if await check_rate_limit_for_user(
-        callback,
-        action='bouquet_ready',
-        limit=10,
-        window=60
-    ):
+    # ⭐ ПРОВЕРКА RATE LIMIT
+    if await check_rate_limit_for_user(callback, action='order_picked_up_by_courier', limit=10, window=60):
         return
-    
+
     # 🔒 Безопасный парсинг callback_data
-    order_id = parse_callback_data(callback.data, "bouquet_ready")
+    order_id = parse_callback_data(callback.data, "order_picked_up_by_courier")
     if order_id is None:
         await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
         return
-    
+
     try:
-        await callback.answer("⏳ Обновляю статус...")
-        
         user_id = callback.from_user.id
         username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
-        logger.info(f"Букет готов для заказа {order_id}, пользователь {username}")
-        
+
+        logger.info(f"Заказ {order_id} передан курьеру, пользователь {username}")
+
+        await callback.answer("✅ Принято!")
+
         retailcrm_service = RetailCRMService(
             api_key=Settings.get_retailcrm_api_key(),
             domain=Settings.get_retailcrm_domain()
         )
-        
+
         order = retailcrm_service.get_order_by_id(order_id)
         if not order:
             await safe_send_message(callback, "❌ Заказ не найден в системе")
             return
+
+        order_number = order.get('number', order_id)
+
+        # ✅ НЕ меняем статус! Только логируем и убираем кнопку
+        db = DatabaseService()
+        db.log_order_action(
+            order_id=order_id,
+            admin_id=user_id,
+            action='picked_up_by_courier',
+            comment=f'Заказ передан курьеру (статус не изменён)'
+        )
+
+        # Убираем кнопку
+        await safe_edit_markup(callback, None)
+
+        # Просьба о чеке
+        await safe_send_message(
+            callback,
+            f"✅ <b>ЗАКАЗ #{order_number} ПЕРЕДАН КУРЬЕРУ</b>\n\n"
+            f"🧾 Отправьте фото чека",
+            parse_mode="HTML"
+        )
+
+        logger.info(f"✅ Заказ {order_id} передан курьеру (без изменения статуса)")
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке 'Передан курьеру' для заказа {order_id}: {e}", exc_info=True)
+        await safe_send_message(callback, "❌ Произошла ошибка")
+
+
+# @router.callback_query(F.data.startswith("bouquet_ready:"))
+# async def handle_bouquet_ready(callback: CallbackQuery):
+#     """Обработчик кнопки 'Букет готов' (только для доставки)"""
+    
+#     # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
+#     if await check_rate_limit_for_user(
+#         callback,
+#         action='bouquet_ready',
+#         limit=10,
+#         window=60
+#     ):
+#         return
+    
+#     # 🔒 Безопасный парсинг callback_data
+#     order_id = parse_callback_data(callback.data, "bouquet_ready")
+#     if order_id is None:
+#         await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
+#         return
+    
+#     try:
+#         await callback.answer("⏳ Обновляю статус...")
         
+#         user_id = callback.from_user.id
+#         username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
+#         logger.info(f"Букет готов для заказа {order_id}, пользователь {username}")
+        
+#         retailcrm_service = RetailCRMService(
+#             api_key=Settings.get_retailcrm_api_key(),
+#             domain=Settings.get_retailcrm_domain()
+#         )
+        
+#         order = retailcrm_service.get_order_by_id(order_id)
+#         if not order:
+#             await safe_send_message(callback, "❌ Заказ не найден в системе")
+#             return
+        
+#         old_status = order.get('status')
+#         order_number = order.get('number', order_id)
+        
+#         # Обновляем статус на "Букет готов"
+#         success = retailcrm_service.update_order_status(
+#             order_id, 
+#             Settings.get_status_bouquet_ready()
+#         )
+        
+#         if success:
+#             db = DatabaseService()
+#             db.log_order_action(
+#                 order_id=order_id,
+#                 admin_id=user_id,
+#                 action='bouquet_ready',
+#                 comment=f'Букет готов. Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
+#             )
+            
+#             # Следующая кнопка - "Передан в доставку"
+#             keyboard = InlineKeyboardMarkup(
+#                 inline_keyboard=[
+#                     [InlineKeyboardButton(
+#                         text="🚚 Передан в доставку",
+#                         callback_data=f"sent_to_delivery:{order_id}"
+#                     )]
+#                 ]
+#             )
+            
+#             await safe_edit_markup(callback, keyboard)
+#             await callback.answer("✅ Букет готов! Статус обновлён", show_alert=True)
+            
+#             logger.info(f"✅ Букет готов для заказа {order_id}")
+#         else:
+#             await safe_send_message(callback, "❌ Не удалось обновить статус")
+#             logger.error(f"Не удалось обновить статус заказа {order_id}")
+    
+#     except Exception as e:
+#         logger.error(f"Ошибка при обработке 'Букет готов' для заказа {order_id}: {e}", exc_info=True)
+#         await safe_send_message(callback, "❌ Произошла ошибка")
+
+
+
+# @router.callback_query(F.data.startswith("sent_to_delivery:"))
+# async def handle_sent_to_delivery(callback: CallbackQuery):
+#     """Обработчик кнопки 'Передан в доставку' (только для доставки)"""
+    
+#     # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
+#     if await check_rate_limit_for_user(
+#         callback,
+#         action='sent_to_delivery',
+#         limit=10,
+#         window=60
+#     ):
+#         return
+    
+#     # 🔒 Безопасный парсинг callback_data
+#     order_id = parse_callback_data(callback.data, "sent_to_delivery")
+#     if order_id is None:
+#         await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
+#         return
+    
+#     try:
+#         user_id = callback.from_user.id
+#         username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
+#         logger.info(f"Передан в доставку заказ {order_id}, пользователь {username}")
+        
+#         await callback.answer("⏳ Обновляю статус...")
+        
+#         retailcrm_service = RetailCRMService(
+#             api_key=Settings.get_retailcrm_api_key(),
+#             domain=Settings.get_retailcrm_domain()
+#         )
+        
+#         order = retailcrm_service.get_order_by_id(order_id)
+#         if not order:
+#             await safe_send_message(callback, "❌ Заказ не найден в системе")
+#             return
+        
+#         old_status = order.get('status')
+#         order_number = order.get('number', order_id)
+        
+#         # Обновляем статус на "Передан в доставку"
+#         success = retailcrm_service.update_order_status(
+#             order_id, 
+#             Settings.get_status_sent_to_delivery()
+#         )
+        
+#         if success:
+#             db = DatabaseService()
+#             db.log_order_action(
+#                 order_id=order_id,
+#                 admin_id=user_id,
+#                 action='sent_to_delivery',
+#                 comment=f'Передан в доставку. Статус: {old_status} → {Settings.get_status_sent_to_delivery()}'
+#             )
+            
+#             # Следующая кнопка - "Выполнен"
+#             keyboard = InlineKeyboardMarkup(
+#                 inline_keyboard=[
+#                     [InlineKeyboardButton(
+#                         text="✅ Выполнен",
+#                         callback_data=f"completed:{order_id}"
+#                     )]
+#                 ]
+#             )
+            
+#             await safe_edit_markup(callback, keyboard)
+#             await callback.answer("✅ Передан в доставку!", show_alert=True)
+            
+#             # Просьба о фото чека
+#             await safe_send_message(
+#                 callback,
+#                 # f"📋 Следующий шаг:\n"
+#                 f"Отправьте: <b>Фото</b> чека 🧾\n",
+#                 parse_mode="HTML"
+#             )
+            
+#             logger.info(f"✅ Заказ {order_id} передан в доставку")
+#         else:
+#             await safe_send_message(callback, "❌ Не удалось обновить статус")
+#             logger.error(f"Не удалось обновить статус заказа {order_id}")
+    
+#     except Exception as e:
+#         logger.error(f"Ошибка при обработке 'Передан в доставку' для заказа {order_id}: {e}", exc_info=True)
+#         await safe_send_message(callback, "❌ Произошла ошибка")
+
+
+
+# @router.callback_query(F.data.startswith("completed:"))
+# async def handle_completed(callback: CallbackQuery):
+#     """Обработчик кнопки 'Выполнен' (для доставки)"""
+    
+#     # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
+#     if await check_rate_limit_for_user(
+#         callback,
+#         action='completed',
+#         limit=10,
+#         window=60
+#     ):
+#         return
+    
+#     # 🔒 Безопасный парсинг callback_data
+#     order_id = parse_callback_data(callback.data, "completed")
+#     if order_id is None:
+#         await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
+#         return
+    
+#     try:
+#         user_id = callback.from_user.id
+#         username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
+#         logger.info(f"Заказ {order_id} выполнен, пользователь {username}")
+        
+#         await callback.answer("⏳ Завершаю заказ...")
+        
+#         retailcrm_service = RetailCRMService(
+#             api_key=Settings.get_retailcrm_api_key(),
+#             domain=Settings.get_retailcrm_domain()
+#         )
+        
+#         order = retailcrm_service.get_order_by_id(order_id)
+#         if not order:
+#             await safe_send_message(callback, "❌ Заказ не найден в системе")
+#             return
+        
+#         old_status = order.get('status')
+#         order_number = order.get('number', order_id)
+        
+#         # Обновляем статус на "Выполнен"
+#         success = retailcrm_service.update_order_status(
+#             order_id, 
+#             Settings.get_status_completed()
+#         )
+        
+#         if success:
+#             db = DatabaseService()
+#             db.log_order_action(
+#                 order_id=order_id,
+#                 admin_id=user_id,
+#                 action='completed',
+#                 comment=f'Заказ выполнен. Статус: {old_status} → {Settings.get_status_completed()}'
+#             )
+            
+#             # Убираем кнопки
+#             await safe_edit_markup(callback, None)
+#             await callback.answer("✅ Заказ выполнен!", show_alert=True)
+            
+#             # Финальное сообщение
+#             await safe_send_message(
+#                 callback,
+#                 f"✅ Заказ #{order_number} успешно выполнен",
+#                 parse_mode="HTML"
+#             )
+            
+#             logger.info(f"✅ Заказ {order_id} успешно выполнен")
+#         else:
+#             await safe_send_message(callback, "❌ Не удалось завершить заказ")
+#             logger.error(f"Не удалось завершить заказ {order_id}")
+    
+#     except Exception as e:
+#         logger.error(f"Ошибка при завершении заказа {order_id}: {e}", exc_info=True)
+#         await safe_send_message(callback, "❌ Произошла ошибка")
+
+
+
+@router.callback_query(F.data.startswith("picked_up:"))
+async def handle_picked_up(callback: CallbackQuery):
+    """Обработчик 'Букет готов' (только для самовывоза)"""
+
+    # ⭐ ПРОВЕРКА RATE LIMIT
+    if await check_rate_limit_for_user(callback, action='picked_up', limit=10, window=60):
+        return
+
+    # 🔒 Безопасный парсинг callback_data
+    order_id = parse_callback_data(callback.data, "picked_up")
+    if order_id is None:
+        await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
+        return
+
+    try:
+        user_id = callback.from_user.id
+        username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
+
+        logger.info(f"Букет готов для заказа {order_id}, пользователь {username}")
+
+        await callback.answer("⏳ Обновляю статус...")
+
+        retailcrm_service = RetailCRMService(
+            api_key=Settings.get_retailcrm_api_key(),
+            domain=Settings.get_retailcrm_domain()
+        )
+
+        order = retailcrm_service.get_order_by_id(order_id)
+        if not order:
+            await safe_send_message(callback, "❌ Заказ не найден в системе")
+            return
+
         old_status = order.get('status')
         order_number = order.get('number', order_id)
-        
-        # Обновляем статус на "Букет готов"
+
+        # Для самовывоза ставим статус "Букет готов"
         success = retailcrm_service.update_order_status(
-            order_id, 
+            order_id,
             Settings.get_status_bouquet_ready()
         )
-        
+
         if success:
             db = DatabaseService()
             db.log_order_action(
                 order_id=order_id,
                 admin_id=user_id,
                 action='bouquet_ready',
-                comment=f'Букет готов. Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
+                comment=f'Букет готов (самовывоз). Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
             )
-            
-            # Следующая кнопка - "Передан в доставку"
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="🚚 Передан в доставку",
-                        callback_data=f"sent_to_delivery:{order_id}"
-                    )]
-                ]
+
+            await safe_edit_markup(callback, None)
+            await callback.answer("✅ Букет готов! Ожидаем клиента", show_alert=True)
+
+            await safe_send_message(
+                callback,
+                f"✅ <b>ЗАКАЗ #{order_number} ГОТОВ К ВЫДАЧЕ</b>\n\n"
+                f"🧾 Отправьте фото чека",
+                parse_mode="HTML"
             )
-            
-            await safe_edit_markup(callback, keyboard)
-            await callback.answer("✅ Букет готов! Статус обновлён", show_alert=True)
-            
-            logger.info(f"✅ Букет готов для заказа {order_id}")
+
+            logger.info(f"✅ Заказ {order_id} готов (самовывоз)")
         else:
             await safe_send_message(callback, "❌ Не удалось обновить статус")
-            logger.error(f"Не удалось обновить статус заказа {order_id}")
-    
+
     except Exception as e:
         logger.error(f"Ошибка при обработке 'Букет готов' для заказа {order_id}: {e}", exc_info=True)
         await safe_send_message(callback, "❌ Произошла ошибка")
 
 
 
-@router.callback_query(F.data.startswith("sent_to_delivery:"))
-async def handle_sent_to_delivery(callback: CallbackQuery):
-    """Обработчик кнопки 'Передан в доставку' (только для доставки)"""
+# @router.callback_query(F.data.startswith("reject_order:"))
+# async def handle_reject_order(callback: CallbackQuery):
+#     """Обработчик отклонения заказа"""
     
-    # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
-    if await check_rate_limit_for_user(
-        callback,
-        action='sent_to_delivery',
-        limit=10,
-        window=60
-    ):
-        return
+#     # ⭐ ПРОВЕРКА RATE LIMIT (3 раза в минуту - строже!)
+#     if await check_rate_limit_for_user(
+#         callback,
+#         action='reject_order',
+#         limit=3,
+#         window=60
+#     ):
+#         return
     
-    # 🔒 Безопасный парсинг callback_data
-    order_id = parse_callback_data(callback.data, "sent_to_delivery")
-    if order_id is None:
-        await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
-        return
+#     # 🔒 Безопасный парсинг callback_data
+#     order_id = parse_callback_data(callback.data, "reject_order")
+#     if order_id is None:
+#         await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
+#         return
     
-    try:
-        user_id = callback.from_user.id
-        username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
-        logger.info(f"Передан в доставку заказ {order_id}, пользователь {username}")
+#     try:
+#         user_id = callback.from_user.id
+#         username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
+#         logger.info(f"Пользователь {username} (ID: {user_id}) отклоняет заказ {order_id}")
         
-        await callback.answer("⏳ Обновляю статус...")
+#         await callback.answer("⏳ Отклоняю заказ...")
         
-        retailcrm_service = RetailCRMService(
-            api_key=Settings.get_retailcrm_api_key(),
-            domain=Settings.get_retailcrm_domain()
-        )
+#         retailcrm_service = RetailCRMService(
+#             api_key=Settings.get_retailcrm_api_key(),
+#             domain=Settings.get_retailcrm_domain()
+#         )
         
-        order = retailcrm_service.get_order_by_id(order_id)
-        if not order:
-            await safe_send_message(callback, "❌ Заказ не найден в системе")
-            return
+#         order = retailcrm_service.get_order_by_id(order_id)
+#         if not order:
+#             await safe_send_message(callback, "❌ Заказ не найден в системе")
+#             return
         
-        old_status = order.get('status')
-        order_number = order.get('number', order_id)
+#         old_status = order.get('status')
+#         order_number = order.get('number', order_id)
         
-        # Обновляем статус на "Передан в доставку"
-        success = retailcrm_service.update_order_status(
-            order_id, 
-            Settings.get_status_sent_to_delivery()
-        )
+#         # Обновляем статус на "Отменен"
+#         success = retailcrm_service.update_order_status(
+#             order_id, 
+#             Settings.get_status_rejected()
+#         )
         
-        if success:
-            db = DatabaseService()
-            db.log_order_action(
-                order_id=order_id,
-                admin_id=user_id,
-                action='sent_to_delivery',
-                comment=f'Передан в доставку. Статус: {old_status} → {Settings.get_status_sent_to_delivery()}'
-            )
+#         if success:
+#             db = DatabaseService()
+#             db.log_order_action(
+#                 order_id=order_id,
+#                 admin_id=user_id,
+#                 action='rejected',
+#                 comment=f'Статус изменен: {old_status} → {Settings.get_status_rejected()}'
+#             )
             
-            # Следующая кнопка - "Выполнен"
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="✅ Выполнен",
-                        callback_data=f"completed:{order_id}"
-                    )]
-                ]
-            )
+#             # Убираем клавиатуру
+#             await safe_edit_markup(callback, None)
+#             await callback.answer("❌ Заказ отклонен", show_alert=True)
             
-            await safe_edit_markup(callback, keyboard)
-            await callback.answer("✅ Передан в доставку!", show_alert=True)
+#             await safe_send_message(
+#                 callback,
+#                 f"❌ Заказ #{order_number} отклонен\n\n"
+#                 f"Статус изменен на 'Отменен'",
+#                 parse_mode="HTML"
+#             )
             
-            # Просьба о фото чека
-            await safe_send_message(
-                callback,
-                # f"📋 Следующий шаг:\n"
-                f"Отправьте: <b>Фото</b> чека 🧾\n",
-                parse_mode="HTML"
-            )
-            
-            logger.info(f"✅ Заказ {order_id} передан в доставку")
-        else:
-            await safe_send_message(callback, "❌ Не удалось обновить статус")
-            logger.error(f"Не удалось обновить статус заказа {order_id}")
+#             logger.info(f"❌ Заказ {order_id} отклонен")
+#         else:
+#             await safe_send_message(callback, "❌ Не удалось отклонить заказ")
+#             logger.error(f"Не удалось отклонить заказ {order_id}")
     
-    except Exception as e:
-        logger.error(f"Ошибка при обработке 'Передан в доставку' для заказа {order_id}: {e}", exc_info=True)
-        await safe_send_message(callback, "❌ Произошла ошибка")
-
-
-
-@router.callback_query(F.data.startswith("completed:"))
-async def handle_completed(callback: CallbackQuery):
-    """Обработчик кнопки 'Выполнен' (для доставки)"""
-    
-    # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
-    if await check_rate_limit_for_user(
-        callback,
-        action='completed',
-        limit=10,
-        window=60
-    ):
-        return
-    
-    # 🔒 Безопасный парсинг callback_data
-    order_id = parse_callback_data(callback.data, "completed")
-    if order_id is None:
-        await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
-        return
-    
-    try:
-        user_id = callback.from_user.id
-        username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
-        logger.info(f"Заказ {order_id} выполнен, пользователь {username}")
-        
-        await callback.answer("⏳ Завершаю заказ...")
-        
-        retailcrm_service = RetailCRMService(
-            api_key=Settings.get_retailcrm_api_key(),
-            domain=Settings.get_retailcrm_domain()
-        )
-        
-        order = retailcrm_service.get_order_by_id(order_id)
-        if not order:
-            await safe_send_message(callback, "❌ Заказ не найден в системе")
-            return
-        
-        old_status = order.get('status')
-        order_number = order.get('number', order_id)
-        
-        # Обновляем статус на "Выполнен"
-        success = retailcrm_service.update_order_status(
-            order_id, 
-            Settings.get_status_completed()
-        )
-        
-        if success:
-            db = DatabaseService()
-            db.log_order_action(
-                order_id=order_id,
-                admin_id=user_id,
-                action='completed',
-                comment=f'Заказ выполнен. Статус: {old_status} → {Settings.get_status_completed()}'
-            )
-            
-            # Убираем кнопки
-            await safe_edit_markup(callback, None)
-            await callback.answer("✅ Заказ выполнен!", show_alert=True)
-            
-            # Финальное сообщение
-            await safe_send_message(
-                callback,
-                f"✅ Заказ #{order_number} успешно выполнен",
-                parse_mode="HTML"
-            )
-            
-            logger.info(f"✅ Заказ {order_id} успешно выполнен")
-        else:
-            await safe_send_message(callback, "❌ Не удалось завершить заказ")
-            logger.error(f"Не удалось завершить заказ {order_id}")
-    
-    except Exception as e:
-        logger.error(f"Ошибка при завершении заказа {order_id}: {e}", exc_info=True)
-        await safe_send_message(callback, "❌ Произошла ошибка")
-
-
-
-@router.callback_query(F.data.startswith("picked_up:"))
-async def handle_picked_up(callback: CallbackQuery):
-    """Обработчик 'Заказ забрали' (только для самовывоза)"""
-    
-    # ⭐ ПРОВЕРКА RATE LIMIT (10 раз в минуту)
-    if await check_rate_limit_for_user(
-        callback,
-        action='picked_up',
-        limit=10,
-        window=60
-    ):
-        return
-    
-    # 🔒 Безопасный парсинг callback_data
-    order_id = parse_callback_data(callback.data, "picked_up")
-    if order_id is None:
-        await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
-        return
-    
-    try:
-        user_id = callback.from_user.id
-        username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
-        logger.info(f"Заказ забран для заказа {order_id}, пользователь {username}")
-        
-        await callback.answer("⏳ Завершаю заказ...")
-        
-        retailcrm_service = RetailCRMService(
-            api_key=Settings.get_retailcrm_api_key(),
-            domain=Settings.get_retailcrm_domain()
-        )
-        
-        order = retailcrm_service.get_order_by_id(order_id)
-        if not order:
-            await safe_send_message(callback, "❌ Заказ не найден в системе")
-            return
-        
-        old_status = order.get('status')
-        order_number = order.get('number', order_id)
-        
-        # Для самовывоза сразу "Выполнен"
-        success = retailcrm_service.update_order_status(
-            order_id, 
-            Settings.get_status_bouquet_ready()
-        )
-        
-        if success:
-            db = DatabaseService()
-            db.log_order_action(
-                order_id=order_id,
-                admin_id=user_id,
-                action='completed',
-                comment=f'Товар забран (самовывоз). Статус: {old_status} → {Settings.get_status_bouquet_ready()}'
-            )
-            
-            await safe_edit_markup(callback, None)
-            await callback.answer("✅ Заказ передан в доставку!", show_alert=True)
-            
-            await safe_send_message(
-                callback,
-                f"✅ Заказ #{order_number} успешно передан в доставку",
-                parse_mode="HTML"
-            )
-            
-            # Просьба о фото чека
-            await safe_send_message(
-                callback,
-                # f"📋 Следующий шаг:\n"
-                f"Отправьте: <b>Фото</b> чека 🧾\n",
-                parse_mode="HTML"
-            )
-            
-            logger.info(f"✅ Заказ {order_id} завершён (самовывоз)")
-        else:
-            await safe_send_message(callback, "❌ Не удалось завершить заказ")
-    
-    except Exception as e:
-        logger.error(f"Ошибка при завершении заказа {order_id}: {e}", exc_info=True)
-        await safe_send_message(callback, "❌ Произошла ошибка")
-
-
-
-@router.callback_query(F.data.startswith("reject_order:"))
-async def handle_reject_order(callback: CallbackQuery):
-    """Обработчик отклонения заказа"""
-    
-    # ⭐ ПРОВЕРКА RATE LIMIT (3 раза в минуту - строже!)
-    if await check_rate_limit_for_user(
-        callback,
-        action='reject_order',
-        limit=3,
-        window=60
-    ):
-        return
-    
-    # 🔒 Безопасный парсинг callback_data
-    order_id = parse_callback_data(callback.data, "reject_order")
-    if order_id is None:
-        await callback.answer("❌ Ошибка: неверный формат данных", show_alert=True)
-        return
-    
-    try:
-        user_id = callback.from_user.id
-        username = callback.from_user.username or callback.from_user.first_name or "Неизвестно"
-        logger.info(f"Пользователь {username} (ID: {user_id}) отклоняет заказ {order_id}")
-        
-        await callback.answer("⏳ Отклоняю заказ...")
-        
-        retailcrm_service = RetailCRMService(
-            api_key=Settings.get_retailcrm_api_key(),
-            domain=Settings.get_retailcrm_domain()
-        )
-        
-        order = retailcrm_service.get_order_by_id(order_id)
-        if not order:
-            await safe_send_message(callback, "❌ Заказ не найден в системе")
-            return
-        
-        old_status = order.get('status')
-        order_number = order.get('number', order_id)
-        
-        # Обновляем статус на "Отменен"
-        success = retailcrm_service.update_order_status(
-            order_id, 
-            Settings.get_status_rejected()
-        )
-        
-        if success:
-            db = DatabaseService()
-            db.log_order_action(
-                order_id=order_id,
-                admin_id=user_id,
-                action='rejected',
-                comment=f'Статус изменен: {old_status} → {Settings.get_status_rejected()}'
-            )
-            
-            # Убираем клавиатуру
-            await safe_edit_markup(callback, None)
-            await callback.answer("❌ Заказ отклонен", show_alert=True)
-            
-            await safe_send_message(
-                callback,
-                f"❌ Заказ #{order_number} отклонен\n\n"
-                f"Статус изменен на 'Отменен'",
-                parse_mode="HTML"
-            )
-            
-            logger.info(f"❌ Заказ {order_id} отклонен")
-        else:
-            await safe_send_message(callback, "❌ Не удалось отклонить заказ")
-            logger.error(f"Не удалось отклонить заказ {order_id}")
-    
-    except Exception as e:
-        logger.error(f"Ошибка при отклонении заказа {order_id}: {e}", exc_info=True)
-        await safe_send_message(callback, "❌ Произошла ошибка при отклонении заказа")
+#     except Exception as e:
+#         logger.error(f"Ошибка при отклонении заказа {order_id}: {e}", exc_info=True)
+#         await safe_send_message(callback, "❌ Произошла ошибка при отклонении заказа")
 
 
 
