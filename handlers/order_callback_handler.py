@@ -232,11 +232,11 @@ async def handle_confirm_order(callback: CallbackQuery):
             
             # Выбираем следующую кнопку в зависимости от типа доставки
             if delivery_type == 'self-delivery':
-                # Для самовывоза - кнопка "Букет готов"
+                # Для самовывоза - кнопка "Заказ забрали"
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(
-                            text="🌸 Букет готов",
+                            text="🛍️ Заказ забрали",
                             callback_data=f"picked_up:{order_id}"
                         )]
                     ]
