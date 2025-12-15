@@ -573,7 +573,7 @@ class OrderMonitorService:
 
                 # Статус изменился на "buket-gotov"?
                 if current_status == Settings.get_status_bouquet_ready():
-                    logger.info(f"🌸 Заказ {order_id} готов! Отправляем уведомление с кнопкой 'Передан курьеру'")
+                    logger.info(f"🌸 Заказ {order_id} готов! Отправляем уведомление с кнопкой 'Заказ забрали'")
                     
                     order_number = current_order.get('number', order_id)
                     
@@ -582,7 +582,7 @@ class OrderMonitorService:
                     keyboard = InlineKeyboardMarkup(
                         inline_keyboard=[
                             [InlineKeyboardButton(
-                                text="🚚 Передан курьеру",
+                                text="🚚 Заказ забрали",
                                 callback_data=f"order_picked_up_by_courier:{order_id}"
                             )]
                         ]
