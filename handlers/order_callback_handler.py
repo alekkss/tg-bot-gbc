@@ -206,10 +206,20 @@ async def handle_confirm_order(callback: CallbackQuery):
         db = DatabaseService()
         delivery_type = db.get_order_delivery_type(order_id)
         
-        # Обновляем статус на "Передан в комплектацию"
+        # ✅ НОВАЯ ЛОГИКА: для самовывоза свой статус
+        if delivery_type == 'self-delivery':
+            # Для самовывоза: сразу "Передан на самовывоз"
+            new_status = Settings.get_status_self_pickup_ready()
+            action_text = 'Статус: Передан на самовывоз'
+        else:
+            # Для доставки: "Передан в комплектацию"
+            new_status = Settings.get_status_confirmed()
+            action_text = 'Статус: Передан в комплектацию'
+        
+        # Обновляем статус
         success = retailcrm_service.update_order_status(
-            order_id, 
-            Settings.get_status_confirmed()
+            order_id,
+            new_status
         )
         
         if success:
@@ -217,7 +227,7 @@ async def handle_confirm_order(callback: CallbackQuery):
                 order_id=order_id,
                 admin_id=user_id,
                 action='confirmed',
-                comment=f'Статус изменен: {old_status} → {Settings.get_status_confirmed()}'
+                comment=f'Статус изменен: {old_status} → {new_status}'
             )
             
             # Выбираем следующую кнопку в зависимости от типа доставки

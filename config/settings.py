@@ -224,3 +224,7 @@ class Settings:
     def get_status_discussion() -> str:
         """Статус обсуждения замен (нет товара)"""
         return os.getenv('STATUS_DISCUSSION', 'obsuzhdenie-zameny')
+    @staticmethod
+    def get_status_self_pickup_ready() -> str:
+        """Статус готовности для самовывоза"""
+        return os.getenv('STATUS_SELF_PICKUP_READY', 'peredan-na-samovyvoz')
